@@ -1,0 +1,268 @@
+---
+title: "**Support Vector Machines**"
+subtitle: |
+ Michele Di Nanni, mat. 7291871\
+ Corso di Modellizzazione Statistica, prof. M. Bilancia
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduzione
+
+&nbsp;
+
+&nbsp;&nbsp; L'algoritmo **Support Vector Machines** è uno degli algoritmi più utili, efficienti ed importanti, appartenenti alla categoria degli algoritmi di *machine learning* supervisionati. L'ambito applicativo più frequente è quello dell' elaborazione del linguaggio naturale (*NLP, natural language processing*), del riconoscimento vocale, delle immagini e della *computer vision*, quest'ultima nota anche con il termine *visione artificiale*. Esso è utilizzato sia per scopi di classificazione, che di regressione. L'idea alla base è quella della presenza di una non separabilità dei dati in modo lineare, col conseguente obbiettivo di costruire un separatore, ovvero un iperpiano di separazione **ottimale**, che ci permetta di dividere al meglio i dati presenti nel *dataset* in classi. Si cerca per prima cosa un **iperpiano linearmente separabile** e qualora ve ne fossero più di uno, si andrebbe a cercare quello contenente il *margine* più alto, al fine di migliorare l'accuratezza del modello. Tuttavia, se tale iperpiano non esiste l'$\bf SVM$ utilizza una **mappatura non lineare** per trasformare i dati di *training* in uno spazio di dimensionalità maggiore(spazio delle variabili). In tal modo, i dati di due classi potranno essere sempre separati da un iperpiano, scelto per la suddivisione dei dati.
+
+&nbsp;
+
+## 1.1 Iperpiano di separazione ottimale e separabilità lineare 
+&nbsp;
+
+&nbsp;&nbsp; Ciò che vogliamo trovare nelle $\bf SVM$ è quell' iperpiano, che nel caso di due classi sarà proprio una retta, che meglio classifica e, quindi, separa i nostri dati. Teoricamente, potremmo avere un numero infinito di rette (e quindi anche di iperpiani) che separino le istanze dei dati di training. L'obbiettivo è proprio trovare quella retta(iperpiano) che sia **ottimale**, generando il più piccolo errore di classificazione su dati di test. Ciò che vorremmo, pertanto, è che i nostri dati siano il più lontano possibile dalla retta(iperpiano), pur restando nella parte corretta, cioè quella di appartenenza a quella specifica classe.
+
+
+Partendo dal caso in cui abbiamo *due classi* con etichette $-1$ e $+1$, consideriamo il campione $\chi =  \{\textbf x^t, \textbf r^t\}$ dove: 
+
+
+1. $\textbf x^t$ è l'insieme dei dati di training
+
+2. $\textbf r^t$ sono le etichette ottenute, ovvero gli output
+$$
+r^t = \begin{cases} +1, & \mbox{se } \textbf x^t \in C_1 \\ -1, & \mbox{se } \textbf x^t \in C_2 \end{cases}$$
+
+L'obbiettivo è quello di trovare $\textbf w$ e $w_0$ tale che: 
+$$ \textbf w^T \textbf x^t + w_0 \geq + 1 \hspace{0.3cm} per\hspace{0.3cm} r^t = +1$$
+$$ \textbf w^T \textbf x^t + w_0 \leq - 1 \hspace{0.3cm} per\hspace{0.3cm} r^t = -1$$
+In altre parole, si vuole ricercare quella combinazione lineare per cui, se la etichetta di classe è $+1$, allora la combinazione dovrà essere maggiore o al più uguale a $+1$; viceversa, se l'etichetta è $-1$, allora occorrerà trovare quella combinazione lineare che sia minore o al più uguale a $-1$.
+Potremmo comunque pensare di "fondere" queste ultime disequazioni, nella seguente:
+$$ r^t(\textbf w^T\textbf x^t + w_0)\geq +1$$
+cioe, se abbiamo una risposta pari a $+1$ ci riferiremo ad una regione, altrimenti ci riferiremo al *complementare* della regione i cui campioni hanno l' etichetta $+1$. Il vettore $\textbf w$ è il cosiddetto *vettore dei pesi* che avrà norma unitaria, cioè $||\textbf w|| = 1$. 
+
+&nbsp;
+
+&nbsp; 
+
+Diamo adesso delle definizioni, utili per comprendere al meglio il concetto di *iperpiano di separazione ottimale*: 
+&nbsp;
+
+&nbsp;
+
+$Def.$ **Vettori di supporto**
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; I vettori di supporto sono gli esempi di training **più vicini** all'iperpiano. Questi punti dipendono dal dataset che analizziamo e, pertanto, qualora fossero rimossi o modificati, la posizione dell'iperpiano di divisione verrebbe alterata. A tal punto, possiamo dire che costituiscono *gli elementi critici* del dataset.
+
+
+$Def.$ **Margine**
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Il margine è la definito come la distanza *minima* fra l'iperpiano di separazione e i vettori di supporto. È fondamentale chiarire che a metà di questa distanza viene tracciato l'iperpiano, o la retta nel caso in cui abbiamo due classi. La dimensione del margine massimo è: $$
+\frac{1}{||\bf w||} + \frac{1}{||\bf w||} = \frac{2}{||\bf w||}
+$$
+
+
+$Def.$ **Iperpiano di separazione ottimale**
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; L' iperpiano di separazione ottimale è quell'iperpiano che massimizza il margine.
+
+&nbsp;
+
+
+Pertanto, l'equazione $\textbf w^T\textbf x = 0$ definirà il limite di decisione, noto anche col termine **decision boundary**; mentre $\textbf w^T \textbf x = - 1$ definisce l' *iperpiano negativo*, ovvero la regione "negativa" e l'equazione $\textbf w^T\textbf x = +1$ definisce l'*iperpiano positivo*, ovvero la regione "positiva". Osserviamo queste considerazioni appena fatte all'interno dell'immagine seguente:
+
+
+![Support Vector Machines: idee di base ](./img/01_01.png){width=530}
+
+
+Come possiamo evincere dalla $Fig. 1$, il concetto alla base delle $\bf SVM$ è, quindi, quello di trovare l'iperpiano ottimale che crei il margine più grande fra le istanze di training appartenenti alla classe $-1$ ed alla classe $+1$.
+
+Il problema può essere ricondotto ad un problema di *ottimizzazione*, in cui vogliamo trovare:
+$$\max_{\textbf w, w_0, \hspace{0.1cm}||\textbf w|| = 1} \rho
+\hspace{0.6cm} t.c. \hspace{0.3cm}  r^t(\textbf w^T\textbf x^t + w_0)\geq \rho, \hspace{0.2cm}\forall t $$
+dove $\rho$ indica il valore da massimizzare, cioè il margine.
+Tuttavia, poichè ci sono un numero infinito di soluzioni che possiamo ottenere, al fine di ottenere una soluzione unica, poniamo $\rho ||\textbf w|| = 1$ e perciò, per massimizzare il margine, occorre minimizzare $||\textbf w||$, quindi il problema diventa:
+$$\min_{\textbf w, w_0} \frac{1}{2}||\textbf w||^2
+\hspace{0.6cm} t.c. \hspace{0.3cm} r^t(\textbf w^T\textbf x^t + w_0)\geq + 1, \hspace{0.2cm}\forall t$$
+
+**Nota**:
+Abbiamo posto $\frac{1}{2}$ nella definizione del valore da minimizzare e la norma al quadrato, in quanto per poter calcolare tale minimo occorrerà il calcolo della derivata ed in tal modo, derivando appunto, quella frazione scomparirà perchè sarà moltiplicata per l'esponente della norma.
+
+
+Dunque, il problema rientra nel contesto dei problemi di ottimizzazione quadratici, che possono essere risolti direttamente andando alla ricerca di $\bf w$ e $w_0$. Il parametro di complessità è $d$, ovvero il numero di *features* presenti nel dataset. Per poter trovare il miglior iperpiano, possiamo convertire il problema facendo in modo che il parametro di complessità sia $N$, ovvero il numero di *istanze di training*.
+
+
+### 1.1.1 Risoluzione del problema di minimizzazione 
+Il problema può essere risolto con l'ausilio del metodo dei moltiplicatori di Lagrange, il quale è un metodo analitico che ci permette di trovare massimi e minimi vincolati.
+
+Per questo motivo, poniamo:
+$$L_p \hspace{0.3cm}= \hspace{0.3cm}\frac{1}{2}||\textbf w||^2 - \sum_{t=1}^N \alpha^t[r^t(\textbf w^T\textbf x^t + w_0)-1] 
+$$
+$$
+=  \frac{1}{2}||\textbf w||^2 - \sum_{t=1}^N \alpha^tr^t(\textbf w^T\textbf x^t + w_0) + \sum_t \alpha^t \hspace{0.9cm} (1.1)
+$$
+Dove la parte relativa alla sommatoria è il vincolo a cui sottoponiamo il nostro problema. La soluzione è data dalla minimizzazione di $\bf w$ e di $w_0$ e dalla massimizzazione di $\alpha^t \geq 0$, il che corrisponde al trovare il *punto di sella*.
+
+
+Svolgendo i prodotti e riscrivendo la norma otteniamo:
+$$
+=\frac{1}{2}(\textbf w^T\textbf w) - \textbf w^T\sum_t\alpha^t r^t \textbf x^t - w_0\sum_t\alpha^t r^t + \sum_t \alpha^t 
+\hspace{2cm}(*)
+$$
+
+
+Per poter procedere, occorre sia calcolare le derivate rispetto a $\bf w$ e $w_0$, ponendole uguali a zero, sia considerare che $\alpha^t \geq 0$. Ovvero:
+$$
+\frac{\partial L_p}{\partial \textbf w} = 0 \hspace{0.5cm}\Rightarrow \hspace{0.5cm} \textbf w = \sum_t \alpha^t r^t \textbf x^t
+\hspace{2cm}(i)
+$$
+$$ \frac{\partial L_p}{\partial w_0} = 0 \hspace{0.5cm}\Rightarrow \hspace{0.5cm}  \sum_t \alpha^t r^t = 0
+\hspace{2.5cm}(ii)
+$$
+Da $(i)$ e da $(ii)$ abbiamo ottenuto due risultati fondamentali; procediamo quindi a fare le opportune sostituzioni all'equazione contrassegnata con $(*)$, otteniamo:
+$$
+L_d = -\frac{1}{2}(\textbf w^T\textbf w) + \sum_t \alpha^t
+$$
+$$
+= -\frac{1}{2}\sum_t \sum_s \alpha^t \alpha^s r^t r^s(\textbf x^t)^T \textbf x^s + \sum_t \alpha^t \hspace{0.7cm} 
+$$
+che vogliamo massimizzare rispetto ad $\alpha^t$, coi vincoli che $\sum_t \alpha^tr^t = 0$ e che $\alpha^t \geq 0$ $,\forall t$. La risoluzione è data da metodi di ottimizzazione quadratica. La dimensione dipende da $N$, ovvero dalla dimensione del campione, e non da $d$, rispettivamente la *dimensionalità* dell'input.
+La soluzione deve soddisfare le condizioni di Karush-Kuhn-Tucker (vedi appendice), che includono $(1)$, $(2)$, $\alpha^t \geq 0$ e: 
+$$
+\alpha^t[r^t(\textbf w^T \textbf x^t + w_0) -1] = 0 \hspace{0.3cm} \forall t
+$$
+
+Possiamo osservare che:
+
+- Se $\alpha^t =0$, allora $\textbf x^t$ non è sul confine del margine, tuttavia
+- Se $\alpha^t >0$, allora $r^t(\textbf w^T \textbf x^t + w_0) = 1$, ovvero, $\textbf x^t$ è sul confine del margine
+
+
+Per questo motivo, i vettori $\textbf x^t$ tali che $\alpha^t > 0$ sono proprio i **vettori di supporto**. Il discriminante, cioè la retta(o l'iperpiano) trovato è chiamato *macchina a vettore di supporto*(nota con l'acronimo $\bf SVM$).
+
+
+Una $\bf SVM$ tiene conto delle istanze che sono vicine al limite(*boundary*), scartando quelle che si trovano all'interno. Usando questa idea di classificazione, possiamo pensare di utilizzare un classificatore più semplice prima di far lavorare la $\bf SVM$, al fine di filtrare una grande parte di tale istanze, facendo decrescere, perciò, la complessità computazionale nella fase di ottimizzazione della $\bf SVM$. 
+
+Durante la fase di *testing*, andremo a calcolare $g(x) = \textbf w^T \textbf x + w_0$ e sceglieremo in base al segno di $g(x)$: se $g(x)>0$ allora sceglieremo la classe $C1$, altrimenti la classe $C2$, cioe:
+$$
+sign(g(x)) = sign(\textbf w^T\textbf x + w_0) = \begin{cases} +1 & \rightarrow  C_1 \\ -1 & \rightarrow \textbf C_2 \end{cases}
+$$
+
+
+Riassumiamo queste considerazioni fatte finora, nel caso in cui ci troviamo ad operare con dataset di due classi, dove abbiamo la separabilità lineare, nella $Fig. 2$:
+
+![Problema a due classi con separabilità lineare](./img/01_02.png){width=350px}
+
+
+
+\newpage
+## 1.2 Non separabilità lineare
+&nbsp;
+
+&nbsp;&nbsp; Finora abbiamo considerato il caso in cui vi fosse una separabilità lineare fra i dati, tuttavia, nella maggior parte delle applicazioni reali questo non accade e quindi abbiamo bisogno di trovare una alternativa che ci permetta di ricondurci al caso lineare. 
+
+Se le due classi non sono, dunque, *linearmente separabili*, il che vuol dire che non esiste alcun iperpiano che ci permetta di dividere i dati, andremo alla ricerca di un certo iperpiano che presenti l'errore minimo di errata classificazione. In questo caso, possiamo ammettere che alcuni vincoli enunciati precedentemente siano violati e abbiamo necessità di definire le cosiddette "variabili deboli", che denoteremo da ora in poi come variabili **slack**, $\xi = (\xi^1,\xi^2, ..., \xi^t) \hspace{0.2cm}t.c.\hspace{0.2cm}\xi^t\geq0$, che consentono la classificazione errata di qualche punto e che codificano la deviazione del margine.
+Pertanto, il vincolo diventa:
+$$
+\textbf w^T\textbf x^t + w_0\geq 1-\xi^t \hspace{0.3cm}se \hspace{0.3cm}r^t = +1 ,\hspace{0.3cm}\forall t$$
+$$
+\textbf w^T\textbf x^t + w_0\leq -1+\xi^t \hspace{0.3cm}se \hspace{0.3cm}r^t = -1\hspace{0.3cm}\forall t$$
+Che possono essere riassunti in:
+$$
+r^t(\textbf w^T \textbf x^t + w_0) \geq 1-\xi^t\hspace{0.3cm} \forall t
+$$
+Ci troviamo dinnanzi a due differenti tipi di deviazione del margine: una istanza può trovarsi sul lato sbagliato ed essere non classificata correttamente; oppure, può essere nel lato corretto ma trovarsi sul margine, cioè, non sufficientemente lontana dall'iperpiano.
+Pertanto, se $\xi^t = 0$ allora avremo corretta classificazione; invece se $0<\xi^t<1$, l'istanza $\textbf x^t$ è classificata correttamente ma nella zona del margine; se $\xi ^t > 1$, l'istanza $\textbf x^t$ non è classificata correttamente. Osserviamo queste considerazioni nella $Fig. 3$
+
+![Non linearità](./img/02_02.png){width=300}
+
+
+
+Possiamo notare di come l'istanza $(a)$ sia classificata *correttamente*, per questo motivo $\xi^t =0$, ovvero $r^tg(\textbf x^t) > 1$ e dunque molto lontana dal margine. L'istanza $(b)$ si trova nella zona corretta, quindi $\xi^t =0$, ma è sul margine, mentre l'istanza $(c)$ si trova nel lato corretto ma è all'interno del margine, dunque non sufficientemente lontana ($0<\xi^t<1$). Infine, l'istanza $(d)$ è classificata in modo erroneo, pertanto $\xi^t > 1$ . Tutti i casi tranne $(a)$ sono vettori di supporto.
+
+
+A questo punto definiamo il *numero di classificazioni errate* come $\#\{\xi ^t\geq1\}$ e il ***soft error*** come la somma delle variabili slack su dati di training, cioè $\sum_t \xi^t$. 
+
+Occorre modificare la funzione di costo, in modo da penalizzare le variabili slack che non sono a $0$, introducendo una costante positiva $C$ che misura il *trade-off* tra la massimizzazione del margine e la minimizzazione dell'errore. È anche noto col termine di "fattore di penalità". Inoltre ciò che penalizziamo non sono solo i punti mal classificati(tali che $\xi^t \geq 1$), ma anche quelli presenti nel margine($0<\xi^t<1$) al fine di ottenere una migliore generalizzazione. Quindi avremo che:
+$$
+L_p=\frac{1}{2}||\textbf w||^2 + C\sum_t \xi^t \hspace{0.5cm}t.c.\hspace{0.5cm} \xi^t \geq 0,\hspace{0.1cm} r^t(\textbf w^T\textbf x^t + w_0)\geq 1 -\xi^t \hspace{0.2cm} \forall t
+$$
+L'obbiettivo è calcolare il minimo di $L_p$ con gli opportuni vincoli, ovvero occorre calcolare:
+$$
+\min L_p = \min_{\textbf w, w_0} \frac{1}{2}||\textbf w||^2 + C\sum_t \xi^t \hspace{0.3cm}t.c.\hspace{0.3cm} \xi^t \geq 0,\hspace{0.1cm} r^t(\textbf w^T\textbf x^t + w_0)\geq 1 -\xi^t \hspace{0.2cm} \forall t
+$$
+
+
+### 1.2.1 Risoluzione del problema di minimizzazione
+&nbsp;
+
+&nbsp;&nbsp; A questo punto, occorre risolvere il problema di minimo, allo stesso modo di come è stato operato nella sezione 1.1.1: considerando i vincoli suddetti, la funzione Langragiana dell' equazione $(1.1)$ , otterremo:
+$$
+L_p = \frac{1}{2}||\textbf w||^2 + c\sum_t\xi^t - \sum_t \alpha^t[r^t(\textbf w^T\textbf x^t + w_0) - 1]+ \xi^t] - \sum_t \mu^t \xi^t\hspace{0.9cm} (*)
+$$
+dove, $\mu^t$ sono i nuovi parametri di Lagrange che ci permettono di garantire la positività a $\xi^t$.
+Il nostro obbiettivo è minimizzare $\textbf w, w_0$ e $\xi^t$(quest'ultimo poichè più vicino a zero è tale valore, più piccolo sarà l'errore di classificazione). Calcoliamo le derivate, le poniamo a zero e otteniamo:
+$$
+\frac{\partial L_p}{\partial \textbf w} \Rightarrow \textbf w= \sum_t \alpha^t r^t \textbf x^t \hspace{1cm} (i)
+$$
+$$
+\frac{\partial L_p}{\partial w_0} \Rightarrow \textbf 0= \sum_t \alpha^t r^t\hspace{1cm} (ii)
+$$
+$$
+\frac{\partial L_p}{\partial \xi^t} \Rightarrow \textbf 0= C - \alpha^t - \mu^t\hspace{0.3cm} \Rightarrow \hspace{0.3cm}\alpha^t =C - \mu^t\hspace{1cm} (iii)
+$$
+Avendo ottenuto questi risultati, possiamo procedere a sostituirli nell'equazione denotata con $(*)$. Otterremo la seguente equazione che vogliamo massimizzare rispetto ad $\alpha^t$:
+$$
+L_d =  \sum_t \alpha^t - \frac{1}{2}\sum_t\sum_s\alpha^t\alpha^sr^tr^s(\textbf x^t)^T\textbf x^s \hspace{0.3cm}t.c.\hspace{0.1cm}\sum_t \alpha^tr^t=0,\hspace{0.1cm} 0\leq \alpha^t \leq C, \hspace{0.1cm}\forall t 
+$$
+In aggiunta alle condizioni $(i),(ii),(iii)$, le condizioni di Karush-Kuhn-Tucker includono i tre vincoli seguenti:
+$$
+\alpha^t[r^t(\textbf w^T \textbf x^t + w_0) - (1 - \xi^t)] = 0
+$$
+$$
+\mu^t \xi^t =0 
+$$
+$$
+r^t(\textbf w^T \textbf x^t + w_0) - (1- \xi^t) \geq 0 \hspace{0.2cm}
+$$
+La soluzione per $\textbf w$ è data da:
+$$
+\hat{\beta} = \sum_t \hat{\alpha}^t r^t\textbf x^t
+$$
+Le istanze per cui il valore di $\alpha^t = 0$ sono quelle istanze che si trovano nella zona corretta e che sono caratterizzate dal fatto che $\xi^t =0$ . Invece, le istanze per cui il valore di $\alpha^t >0$ sono le istanze che definiscono i *vettori di supporto*:  in particolare tra questi troviamo quelli che risiedono sul bordo del margine($\xi^t = 0$), per cui $0<\alpha^t < C$ e $r^t(\textbf w^T\textbf x^t + w_0)=1$, i quali possono essere usati per calcolare $w_0$(di solito si usa prendere una media di queste stime calcolate per una maggior stabilità numerica). Infine, le istanze per cui $\alpha^t = C$ e $\xi^t > 0$ sono quelle che troviamo nel margine, ovvero che non sono abbastanza lontane dal margine.
+
+
+La risoluzione del problema è trovata con tecniche di ottimizzazione. Otteniamo infine le soluzioni $\hat{\textbf w}$ e $\hat{w_0}$ e la funzione di decisione possiamo riscriverla come segue:
+$$
+\hat g(x) = sign[\hat{\textbf w}^T \textbf x + \hat{w_0}]
+$$
+Il parametro che dev'essere regolato in questa procedura è il parametro di costo $C$.
+
+&nbsp;
+### 1.2.2 Il parametro C e la *Hinge Loss*
+&nbsp;
+
+
+&nbsp;&nbsp; Per poter definire la *Hinge Loss* dobbiamo definire l'errore atteso di test :
+$$
+E_N[P(error)] \leq \frac{E_N[\#vettori\ di\ supporto]}{N}
+$$
+dove $E_N[\cdot]$ rappresenta la previsione sul training set di dimensione $N$: notiamo che tale rapporto di errore non dipende dalla *dimensionalità* dell'input. 
+
+Sapendo che un errore è annotato se l'istanza si trova nel lato sbagliato oppure se l'istanza si trova nel margine, ovvero quando $0<\xi^t<1$, possiamo definire la *Hinge Loss*:
+
+
+$Def. $ **Hinge Loss**
+
+
+&nbsp;&nbsp;&nbsp;&nbsp; Se sappiamo che $y^t = \textbf w^t\textbf x^t + w_0$ è l'output ottenuto, mentre $r^t$ è l'output atteso, possiamo definire la *Hinge Loss* come:
+$$
+L_{hinge}(y^y, r^t) = \begin{cases} 0 & \mbox{se }y^tr^t\geq 1 \\ 1-y^tr^t & \mbox{altrimenti } \end{cases} 
+$$
+
+
+## Appendice
+### Kuhn-Tucker conditions
