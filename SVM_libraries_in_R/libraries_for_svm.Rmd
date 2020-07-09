@@ -1,0 +1,622 @@
+---
+title: "Librerie in R per le Support Vector Machines e loro utilizzo"
+author: "Michele Di Nanni, mat. 729187"
+subtitle: Corso di Modellizzazione Statistica, prof. M. Bilancia
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(out.width ='400px', fig.align   = 'center')
+knitr::opts_chunk$set(comment = NA, background  = " #FFFBA5 ")
+```
+
+
+&nbsp;
+
+## 1.1 Il package *e1071* - caso lineare
+&nbsp;
+
+Per poter utilizzare le *support vector machines* in R, possiamo utilizzare il package **e1071**. Se quest'ultimo non è installato sulla propria macchina, procediamo ad installarlo in R tramite il comando:
+```{r eval=FALSE}
+install.packages("e1071")
+```
+
+Dopo aver eseguito tale comando, andiamo ad importare il package per poterci lavorare:
+```{r importo le librerie necessarie, warning=FALSE,message=FALSE}
+library(e1071)
+library(ggplot2) #libreria che include ggplot2 per la visualizzazione dei dati
+```
+
+Procediamo a mostrare un primo utilizzo della libreria, utilizzando un dataset creato in maniera artificiosa ai fini illustrativi. Il task che andremo a considerare adesso sarà quello di separabilità lineare a due classi:
+
+```{r creo dati separabili linearmente, echo=FALSE}
+n <- 200 #numero di punti nel dataset
+set.seed(1) #set del seme di partenza della generazione casuale
+
+# Creo un dataframe con le due variabili x1 e x2 aleatorie, uniformemente distribuite 
+# nell'intervallo[0,1] tramite il metodo runif()
+df <- data.frame(x1 = runif(n), x2 = runif(n))
+
+# Aggiungo la variabile di classificazione: se la differenza fra x1 e x2 è
+# maggiore di zero associo la classe 1, altrimenti -1
+threshold <- 0.05
+df$y <- factor(ifelse(df$x1 - df$x2 > 0, 1, -1), levels = c(1, -1))
+
+# Rimuovo punti troppo vicini alla retta
+# per ottenere distanza maggiore fra i punti 
+df_thresholded <- df[abs(df$x1 - df$x2)>threshold, ]
+
+
+# Visualizzo i dati con la libreria ggplot2
+plotting <- ggplot(data = df_thresholded, aes(x = x1, y = x2, color = y)) + 
+        geom_point() +
+        scale_color_manual(values = c("1" = "darkgreen", "-1" = "red")) + 
+        geom_abline(slope = 1, intercept = 0)
+  
+plotting
+```
+
+
+Ora procediamo ad effettuare uno splitting train/test con percentuale 75% / 25%:
+
+```{r training_testing splitting, warning=FALSE,message=FALSE}
+library(caret)
+set.seed(1)
+inTrain <- createDataPartition(y = df_thresholded$y, p = .75, list = FALSE)
+training <- df_thresholded[ inTrain, ]
+testing <- df_thresholded[ -inTrain, ]
+```
+
+
+A questo punto procediamo ad utilizzare il metodo **svm** della libreria *e1071*, con kernel lineare. Il metodo **svm** contiene differenti parametri, di seguito sono spiegati uno ad uno quelli utilizzati:
+
+1. **formula**: ci permette di specificare variabili indipendenti e dipendenti
+2. **data**: si riferisce ai dati passati in input per la classificazione
+3. **type**: attraverso questo parametro possiamo settare il tipo di classificazione/regressione desiderata; difatti il parametro  può assumere valore *C-classification* (come nel seguente esempio), *nu-classification* per indicare la classificazione basata sul parametro $\nu \in [0,1]$, *one-classification* per effettuare rilevamento di *outlier*, *eps-regression* e *nu-regression* per quanto riguarda tasks di regressione
+4. **kernel**: ci permette di impostare quale tipo di kernel vogliamo utilizzare(in questo caso stiamo utilizzando un kernel lineare); altri valori del parametro che denotano un kernel valido sono *poly* (kernel polinomiale), *radial*, *sigmoid*
+5. **cost**: attraverso tale parametro possiamo impostare il livello di complessità del modello(infatti, se quest'ultimo coincide con un valore molto basso potremmo ricadere in *underfitting*, se invece abbiamo una valore molto alto potremmo ricadere in *overfitting*)
+6. **scale**: indica se occorre riscalare o meno le variabili
+
+```{r uso svm su dati linearmente separabili}
+svm_model <- e1071::svm(formula = y~., data = training, type = "C-classification", 
+              kernel = "linear", cost = 1, scale = F)
+
+summary(svm_model)
+```
+
+Da questo output possiamo osservare di quanto, con un valore di $C$ pari a $1$ abbiamo un numero pari a $51$ vettori di supporto.
+
+&nbsp;
+
+Visualizziamo adesso i primi sei vettori di supporto:
+```{r vettori di supporto}
+head(svm_model$SV)
+```
+
+&nbsp;
+
+A questo punto andiamo a valutare la accuratezza del modello sul test set:
+
+
+```{r accuratezza sul test set}
+#accuratezza sul test set valutata 
+pred = predict(svm_model, testing)
+table(predicted = pred, true = testing$y)
+```
+Possiamo notare di come la accuratezza sia pari a 1. Non abbiamo errori di predizione in questo caso molto idealizzato.
+
+&nbsp; 
+
+Un metodo molto utile che ci permette di comprendere quali siano i parametri migliori da settare per il modello è il metodo *tune()* che effettua di default una *10-fold cross validation*. Tale metodo ci permette di visualizzare anche quale sia il modello migliore ottenibile, attraverso:
+```{r best model}
+set.seed(1)
+# Imposto C = 10 e ottengo che il valore migliore di C = 1
+tune_out_train = tune.svm( 
+                y~., 
+                data = training, 
+                kernel = "linear",
+                scale = F,
+                C = 10)
+summary(tune_out_train$best.model)
+```
+Come possiamo evincere da quanto ottenuto, il miglior modello prevede il parametro di costo $C$ pari ad 1. 
+
+
+Per poter rappresentare la retta di separazione ottimale, occorre calcolare i parametri $\bf w$ e $w_0$, rispettivamente la pendenza(slope) e l' intercetta, in quanto la retta sarà definita come: $y = \textbf w^Tx +w_0$.
+
+
+```{r visualizzazione dei risultati, echo=FALSE}
+plot_train <- ggplot(data = training, aes(x = x1, y = x2, color = y)) + 
+        geom_point() +
+        scale_color_manual(values = c("darkgreen","red")) 
+df_sv <- training[svm_model$index, ]
+
+# Costruisco il vettore dei pesi w
+w <- t(svm_model$coefs) %*% svm_model$SV
+
+# Calcolo il valore della pendenza della mia retta: moltiplico per (-) in quanto 
+# il valore di rho restituito è negativo
+slope <- -w[1]/w[2]
+
+# Calcolo l'intercetta
+intercept <- svm_model$rho/w[2]
+
+# Visualizzo la retta di separazione e i due limiti attraverso
+# le linee tratteggiate
+plot_train_sv <- plot_train + geom_point(data = df_sv,
+                                         aes(x = x1, y = x2),
+                                         color = "yellow",
+                                         size = 3, alpha=0.5) +
+                              geom_abline(slope=slope, intercept = intercept) +
+                              geom_abline(slope = slope,
+                                          intercept = intercept-1/w[2],
+                                          linetype = "dashed") + 
+                              geom_abline(slope = slope,
+                                          intercept = intercept+1/w[2],
+                                          linetype = "dashed")
+plot_train_sv
+```
+
+
+I punti cerchiati in giallo corrispondono ai vettori di supporto.
+
+
+Un' altra modalità che ci permette di visualizzare i dati è tramite la funzione *plot()*
+```{r visualizzazione alternativa dei risultati}
+plot(svm_model, training)
+```
+
+
+Aumentando il grado di complessità $C=100$ possiamo notare di come otterremo meno vettori di supporto, ma tale parametro non dev'essere settato a valori troppo alti, in quanto si potrebbe ricadere in *overfitting*: 
+```{r grado maggiore di complessità, echo=FALSE}
+svm_model_100 <- svm(formula = y~., data = training, type = "C-classification", kernel = "linear", cost = 100, scale = FALSE)
+
+
+plot_train <- ggplot(data = training, aes(x = x1, y = x2, color = y)) + 
+        geom_point() +
+        scale_color_manual(values = c("darkgreen","red")) 
+df_sv <- training[svm_model_100$index, ]
+
+# Costruisco il vettore dei pesi w
+w <- t(svm_model_100$coefs) %*% svm_model_100$SV
+
+# Calcolo il valore della pendenza della mia retta: moltiplico per (-) in quanto il valore 
+# di rho restituito è negativo
+slope <- -w[1]/w[2]
+
+# Calcolo l'intercetta
+intercept <- svm_model_100$rho/w[2]
+
+# Visualizzo la retta di separazione e i due limiti attraverso
+# le linee tratteggiate
+plot_train_sv <- plot_train + geom_point(data = df_sv,
+                                         aes(x = x1, y = x2),
+                                         color = "yellow",
+                                         size = 3, alpha=0.5) +
+                              geom_abline(slope=slope, intercept = intercept) +
+                              geom_abline(slope = slope,
+                                          intercept = intercept-1/w[2],
+                                          linetype = "dashed") + 
+                              geom_abline(slope = slope,
+                                          intercept = intercept+1/w[2],
+                                          linetype = "dashed")
+plot_train_sv
+```
+\newpage
+
+## 1.2 Il package *e1071* - caso non lineare
+
+&nbsp;
+
+In questa sezione vedremo come utilizzare il metodo *svm()* della libreria *e1071* nel caso in cui non abbiamo separabilità lineare. 
+
+
+Generiamo $200$ punti da una normale con media nulla e varianza unitaria e utilizziamo la funzione *xor logico*, ovvero per ogni coppia di punti generata in maniera aleatoria calcolo il risultato in questo modo:
+$$
+y = \begin{cases} +1, & \mbox{se }  (x_1 >0)\oplus (x_2 > 0) \\ -1, & altrimenti \end{cases}
+$$
+
+In seguito visualizziamo i dati attraverso *ggplot2*.
+```{r dati non linearmente separabili}
+n <- 200 #numero di punti nel dataset
+set.seed(1) #set del seme di partenza della generazione casuale
+
+# Genero il dataframe con le due variabili x1 e x2, uniformemente distribuite ()
+df_ns <- data.frame(x1 = rnorm(n), x2 = rnorm(n))
+
+# Creo la variabile y in maniera non lineare, usando lo xor logico
+df_ns$y <- factor(ifelse(xor(df_ns$x1>0, df_ns$x2>0), 1, -1), levels = c(1, -1))
+
+plotting_notseparable <- ggplot(data = df_ns, aes(x = x1, y = x2, color = y)) + 
+        geom_point() +
+        scale_color_manual(values = c("1" = "orange", "-1" = "blue")) 
+plotting_notseparable
+
+```
+
+Osserviamo di come non sia possibile dividere le istanze del dataset in maniera lineare, in quanto le non abbiamo separabilità lineare. Procediamo con il partizionare il nostro dataset in training e test sempre con la stessa percentuale ($75\%/25\%$) e ad applicare un modello lineare con $C=100$:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(caret)
+set.seed(1)
+inTrain <- createDataPartition(y = df_ns$y, p = .75, list = FALSE)
+training <- df_ns[ inTrain, ]
+testing <- df_ns[ -inTrain, ]
+
+
+svm_model_nl <- e1071::svm(formula = y~., data = training, type = "C-classification", 
+              kernel = "linear", cost = 100, scale = F)
+
+table(predict(svm_model_nl, testing), testing$y)
+```
+
+Come possiamo evincere, l'accuratezza non è molto alta nel test set(circa il $53\% \ (26/49)$): notiamo la presenza di $23$ istanze che non sono state classificate correttamente.
+
+
+Procediamo ad utilizzare un kernel *radiale* su questo dataset per verificare di come l'accuratezza predittiva abbia un valore maggiore rispetto al caso precedente.
+
+```{r utilizzo del kernel radiale e visualizzazione}
+# Il parametro gamma ci permette di settare la forma dei "picchi"
+# relativi alle protuberanze nel nuovo spazio di dimensione 
+# superiore: difatti se gamma ha valore grande avremo delle
+# protuberanze più ampie e sinuose, con un gamma basso più
+# appuntite
+svm_model <- svm(formula = y~., data = training, 
+                 type = "C-classification", kernel = "radial")
+plot(svm_model, training)
+```
+
+Andiamo a calcolare l'accuratezza predittiva e la matrice di confusione:
+```{r}
+pred = predict(svm_model, testing)
+table(predicted = pred, true = testing$y)
+```
+
+Possiamo notare di come l'accuratezza predittiva sul test set sia notevolmente maggiore rispetto al caso precedente(lineare). In questo caso è circa il'$96\%: [(26 + 21)/49]\cdot 100$. 
+
+
+\newpage
+
+## 1.3 Il package *e1071* - dati distribuiti in maniera circolare
+
+&nbsp;
+
+Considero un dataset creato allo stesso modo in maniera artificiosa, in cui i dati sono disposti in maniera circolare. La variabile di output sarà definita come segue: 
+$$
+y = \begin{cases} +1, & \mbox{se } \textbf x_1^2+x_2^2 < raggio^2 \\ -1, & altrimenti \end{cases}
+$$
+```{r caso circolare, echo=FALSE}
+n <- 200 #numero di punti nel dataset
+set.seed(1) #set del seme di partenza della generazione casuale
+
+# Genero il dataframe con le due variabili x1 e x2, uniformemente distribuite e
+# (comprese fra -1 e 1) casuali, tramite il metodo runif()
+df_radius <- data.frame(x1 = runif(n, min = -1, max = 1), x2 = runif(n, min = -1, max = 1))
+
+# Aggiungo la variabile di output
+raggio <- 0.8
+df_radius$y <- factor(ifelse(df_radius$x1^2 + df_radius$x2^2  < raggio^2, 1, -1), levels = c(1, -1))
+
+# Visualizzo i dati con la libreria ggplot2
+plotting <- ggplot(data = df_radius, aes(x = x1, y = x2, color = y)) + 
+        geom_point() +
+        scale_color_manual(values = c("1" = "darkgreen", "-1" = "red")) 
+plotting
+```
+
+
+Procediamo a questo punto ad applicare 3 differenti tipologie di kernels:
+
+
+1. Kernel polinomiale
+2. Kernel sigmoidale
+3. Kernel radiale
+
+e ne valutiamo l'accuratezza predittiva. 
+
+
+Prima di tutto, come al solito, occorre partizionare in training e test set($75\% / 25\%$).
+
+```{r partizionamento, echo=FALSE, message=FALSE, warning=FALSE }
+
+set.seed(1)
+inTrain <- createDataPartition(y = df_radius$y, p = 0.75, list = FALSE)
+training <- df_radius[inTrain, ]
+testing <- df_radius[-inTrain, ]
+```
+
+Ora possiamo andare ad applicare i tre modelli su dati di training, scegliendo il grado 2 per il polinomio e i valori di default dei parametri *cost, gamma, coef0*:
+```{r check tre diversi metodi}
+svm_polynomial <- svm(formula = y~., data = training, type = "C-classification", 
+              kernel = "poly", degree = 2) #grado due del polinomio
+svm_sigmoidal <- svm(formula = y~., data = training, type = "C-classification", 
+              kernel = "sigmoid")
+svm_radial <- svm(formula = y~., data = training, type = "C-classification", 
+              kernel = "radial")
+```
+
+
+**Nota**: 
+
+> I valori di default sono: cost = 1, gamma = 0.5, coef0 = 0 
+
+Adesso possiamo passare a valutare l'accuratezza predittiva su dati di training e di testing. Visualizziamo inoltre anche la matrice di confusione.
+
+> \begin{center}\bf Predizione con il modello basato su kernel polinomiale\end{center}
+
+```{r Accuratezza su dati di training -dati radiali}
+test_results <- predict(svm_polynomial, newdata = training)
+confusionMatrix(test_results, training$y)
+```
+
+```{r  Accuratezza modello polinomiale grado 2}
+test_results <- predict(svm_polynomial, newdata = testing)
+confusionMatrix(test_results, testing$y)
+```
+
+Possiamo visualizzare di come abbiamo ottenuto un accuratezza di circa $95\%$ su dati di train, mentre di $88\%$ su dati di test. Abbiamo solo 6 errori di classificazione errata nel test. Il valore dell'accuratezza è abbastanza buono, usando un polinomio di grado $2$. Visualizziamo graficamente i risultati:
+```{r visualizzo il modello polinomiale}
+plot(svm_polynomial, training)
+```
+
+
+
+Vediamo ora quali sono i parametri migliori che possono essere usati in questo caso, nel caso in cui si voglia usare un kernel *polinomiale*
+```{r best parameters and best model polynomial}
+set.seed(1)
+tune_out<- tune.svm(x = training[,-3],
+                    y = training[,3],
+                    type = "C-classification",
+                    kernel = "polynomial",
+                    degree = c(1,2,3),
+                    cost = 10^(-1:2),
+                    gamma = c(0.1,1,10),
+                    coef0 = c(0.1, 1, 10))
+
+tune_out$best.parameters$cost
+
+
+tune_out$best.parameters$gamma
+
+
+tune_out$best.parameters$coef0
+
+
+tune_out$best.parameters$degree
+```
+
+I parametri migliori sono *cost = 1*, *gamma = 1*, *coef0 = 1*, *degree = 2*.
+
+
+> \begin{center}\bf Predizione con il modello basato su kernel sigmoidale\end{center}
+
+Passiamo ad effettuare la predizione su dati di training e su dati di test per quanto riguarda una svm basata su kernel sigmoidale
+
+
+```{r training sigmoidale}
+test_results <- predict(svm_sigmoidal, newdata = training)
+confusionMatrix(test_results, training$y)
+```
+
+
+Accuratezza su dati di testing:
+```{r testing sigmoidale}
+test_results <- predict(svm_sigmoidal, newdata = testing)
+confusionMatrix(test_results, testing$y)
+```
+
+
+L'accuratezza è circa $50\%$ sui dati di test, pertanto possiamo concludere che il kernel sigmoidale non ci permette di separare al meglio il nostro dataset. Visualizziamo il risultato:
+
+```{r}
+plot(svm_sigmoidal, training)
+```
+
+
+
+
+
+> \begin{center}\bf Predizione con il modello basato su kernel di base radiale\end{center}
+
+Passiamo ad effettuare la predizione su dati di training e su dati di test per quanto riguarda il vsm basato su kernel radiale
+
+
+```{r training radiale}
+train_results <- predict(svm_radial, newdata = training)
+confusionMatrix(train_results, training$y)
+```
+
+```{r dati di testing radiale}
+test_results <- predict(svm_radial, newdata = testing)
+confusionMatrix(test_results, testing$y)
+```
+Attraverso un kernel radiale riusciamo ad avere una accuratezza di circa il $95\%$, il che indica che con il kernel gaussiano riusciamo ad avere una quasi ottima separazione. Passiamo alla visualizzazione:
+```{r}
+plot(svm_radial, training)
+```
+
+
+
+
+
+
+
+## 1.4 Il package *Kernlab*
+
+
+Un'altra modalità con cui poter lavorare con le *svm* in R è utilizzare il package *Kernlab*, al cui interno troviamo il metodo **ksvm**, il quale supporta la classificazione basata sul parametro di costo $C$, quella basata sul parametro $\nu \in [0,1]$, la regressione basata su $\epsilon$ e su $\nu$ ed infine la classificazione multiclasse.
+
+
+Utilizziamo il package e lavoriamo sul dataset *diabetes indiani Pima* :
+
+
+```{r warning=FALSE, message=FALSE}
+library(kernlab)
+#importo il dataset indiani Pima
+library(MASS) 
+data(Pima.te)
+str(Pima.te)
+```
+ Il dataset è costituito da 7 variabili di input e da 1 variabile di output indicante la presenza o meno del diabete.
+
+
+Procediamo col partizionare in training e test set, utilizzando questa volta una percentuale $80\%/20\%$:
+```{r training test split}
+set.seed(1)
+inTrain <- createDataPartition(y = Pima.te$type, p = .80, list = FALSE)
+training_pima <- Pima.te[ inTrain, ]
+testing_pima <- Pima.te[ -inTrain, ]
+```
+
+Procediamo con applicare il modello *svm* con un kernel lineare, lavorando con *ksvm*:
+```{r kernlab}
+set.seed(1)
+train_ksvm_pima <- ksvm(data = training_pima,
+     type~.,
+     C = 1,
+     type = "C-svc",
+     scaled = TRUE,
+     kernel = "vanilladot")
+```
+```{r kernlab pred}
+predicted <- kernlab::predict(train_ksvm_pima, testing_pima)
+confusionMatrix(predicted, testing_pima$type)
+```
+Notiamo la presenza di accuratezza di circa il $77\%$.
+Procediamo con applicare il modello *svm* con un kernel radiale(*gaussiano*), lavorando sempre con *ksvm*:
+```{r}
+set.seed(1)
+train_ksvm_pima <- ksvm(data = training_pima,
+     type~.,
+     scaled = TRUE,
+     type = "C-svc",
+     kernel = "rbfdot"
+     )
+predicted <- kernlab::predict(train_ksvm_pima, testing_pima)
+confusionMatrix(predicted, testing_pima$type)
+```
+Notiamo la presenza di una accuratezza di circa il $71\%$ con tale kernel gaussiano.
+
+
+Procediamo ad effettuare la classificazione basata su kernel polinomiale, usando tuttavia un modello che è il *$\nu$-classification*, che utilizza il valore di $\nu \in [0,1]$ piuttosto che $C$,il quale può assumere un qualunque valore positivo.
+
+```{r}
+set.seed(1)
+train_ksvm_pima <- ksvm(data = training_pima,
+     type~.,
+     scaled = TRUE,
+     type = "nu-svc",
+     kernel = "vanilladot",
+     nu = 0.5,
+     kpar=list()
+     )
+predicted <- kernlab::predict(train_ksvm_pima, testing_pima)
+confusionMatrix(predicted, testing_pima$type)
+
+```
+
+Notiamo di come l'accuratezza predittiva sia di circa il $78\%$.
+
+
+## 1.5 Il package *gensvm*
+
+
+Questo package ci permette di lavorare al meglio nel caso in cui ci troviamo in situazioni *multiclasse*.
+Procediamo con l'installazione e l'import del package:
+
+```{r gensvm install, eval=FALSE, warning=FALSE, message=FALSE}
+install.packages("gensvm")
+
+library(gensvm)
+```
+Utilizzeremo il dataset iris, già disponibile in R. Possiamo già passare al partizionamento in train/test: in questo caso, poichè la libreria mette già a disposizione un metodo per poterlo fare, utilizzeremo tale approccio.
+
+```{r dataset iris}
+set.seed(1)
+x <- iris[, -5]
+y <- iris[, 5]
+split_iris <- gensvm::gensvm.train.test.split(x, y, train.size = .75)
+```
+Procediamo con l'applicazione del modello SVM, utilizzando un kernel lineare, tramite il metodo *gensvm*:
+```{r fitting su gensvm}
+set.seed(1)
+fit <- gensvm::gensvm(x=split_iris$x.train,
+               y=split_iris$y.train,
+               kernel = "linear",
+              )
+fit
+```
+Procediamo con la fase predittiva:
+
+```{r predizione gensvm}
+pred<- predict(fit, split_iris$x.test)
+gensvm::gensvm.accuracy(split_iris$y.test, pred)
+table(pred, split_iris$y.test)
+``` 
+
+Possiamo notare di come la predizione sia molto alta, usando un kernel lineare ($97\%$) sui dati di test.
+
+Passiamo alla visualizzazione dei dati tramite il metodo *plot()*:
+```{r visualizzazione dei dati}
+plot(fit, split_iris$y.train)
+```
+
+
+
+## 1.6 Il package *liquidSVM*
+
+
+Il package *liquidSVM* è estremamente rapido in datasets di grandi dimensioni.
+
+```{r message=FALSE, warning=FALSE}
+library(liquidSVM)
+```
+
+Proprio perchè si mostra essere molto veloce in dataset grandi, partiamo con l'utilizzo di un dataset contenente 4000 istanze e 3 attributi(2 indipendenti, 1 dipendente, ovvero di output).
+```{r}
+gi <- liquidData("banana-mc")
+```
+
+Confrontiamo *liquidSVM* con *e1071*, usando un kernel gaussiano.
+
+```{r liquidSVM}
+system.time(liquid_train <- liquidSVM::svm(Y ~., 
+                                   gi$train,
+                                   l=c(2^(-2:2)),
+                                   g=c(2^(-2:2)),
+                                   threads = 4, 
+                                   folds = 5))
+```
+
+```{r e1071}
+system.time(a <- e1071::tune.svm(Y~., 
+                                 data = gi$train,
+                                 scale = F,
+                                 gamma = c(2^(-2:2)),
+                                 cost = c(2^(-2:2)),
+                                 folds = 5,
+                                 ))
+```
+
+Come possiamo evincere dai risultati precedenti, una *5-fold* cross-validation risulta essere molto più rapida con l'utilizzo di *liquidSVM*, piuttosto che con *e1071*.
+
+
+## 1.7 Ulteriori packages
+
+
+Vi sono molte altre librerie in R per le *support vector machines*. Enunciamo le più rilevanti ed utilizzate:
+
+1. ***gkmsvm***: utilizzata in ambito biomedico, in particolare in biologia, per gestire al meglio il parametro *k* delle cosiddette *k-mer*, (cioè le sottosequenze di lunghezza *k* contenute in una sequenza genomica). Inoltre, la libreria è stata ideata per questo specifico task, ma comunque può essere estesa a qualunque altro problema di classificazione di sequenze;
+
+2. ***parallelSVM***: utilizzata per ottenere una predizione maggiormente accurata in quanto sfrutta il calcolo in parallelo, indispensabile nel caso in cui ci troviamo a lavorare con *big data*;
+
+3. ***sparseSVM***: utilizzata anche questa in ambito *big data* ed in particolare quando sono presenti matrici di dati sparse;
+
+4. ***svmplus***: implementazione più efficiente delle *svm* per problemi di classificazione 
+
+5. ***WeightSVM***: di recente creazione, migliora l'efficienza, poichè sfrutta l'approccio di assegnare pesi diversi a istanze diverse 
+

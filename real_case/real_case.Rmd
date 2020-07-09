@@ -1,0 +1,599 @@
+---
+title: "Utilizzo dell'algoritmo SVM sul dataset Adult"
+author: "Michele Di Nanni, mat. 729187"
+subtitle: Corso di Modellizzazione Statistica, prof. M. Bilancia
+header-includes:
+  - \usepackage{setspace, relsize}
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(out.width ='300px', fig.align   = 'center')
+knitr::opts_chunk$set(message = FALSE)
+```
+
+# Il dataset *Adult*
+
+
+Il dataset raccoglie differenti informazioni relative a determinati individui al fine di determinare se una persona guadagna una cifra superiore a $50000$ dollari annuali o meno: il task di classificazione è quindi, quello di predire se un certo individuo, identificato tramite gli attributi, guadagnerà una cifra superiore o inferiore.
+Procediamo con effettuare l'analisi esplorativa del dataset(EDA), prima di lavorare con l'algoritmo SVM per la predizione.
+```{r import libraries, warning=FALSE, message = FALSE}
+library(tidyverse)
+library(liquidSVM)
+library(dplyr)
+library(Hmisc)
+library(caret)
+library(kernlab)
+library(ggplot2)
+library(e1071)
+library(outliers)
+library(doParallel)
+```
+
+
+## 1. Analisi esplorativa del dataset (EDA)
+
+```{r import dataset, echo = FALSE}
+adult.train <- read.csv("./data/adult.data", sep=',', header = FALSE)
+adult.test <- read.csv("./data/adult.test", sep = ',', header = FALSE)
+colnames(adult.train) <- c('age', 'workclass', 'fnlwgt', 'education', 
+                     'education_num', 'marital_status', 'occupation', 'relationship', 'race', 'sex', 
+                     'capital_gain', 'capital_loss', 'hours_per_week', 'native_country', 'income')
+
+colnames(adult.test) <- c('age', 'workclass', 'fnlwgt', 'education', 
+                     'education_num', 'marital_status', 'occupation', 'relationship', 'race', 'sex', 
+                     'capital_gain', 'capital_loss', 'hours_per_week', 'native_country', 'income')
+
+adult <- rbind(adult.train, adult.test)
+rm(adult.test, adult.train)
+```
+
+&nbsp;
+
+> **Descrizione del dataset**
+
+&nbsp;
+
+Il dataset è formato da 48842 osservazioni e da 14 attributi. Vediamo nel dettaglio questi ultimi:
+
+1. *age*: variabile numerica indicante l'età di ogni individuo
+
+2. *workclass*: variabile categorica indicante la categoria lavorativa del singolo individuo(ad esempio lavoratore autonomo, disoccupato, ecc...)
+
+3. *fnlwgt*: variabile numerica indicante il peso di quanta parte della popolazione rappresenta quell'individuo 
+
+4.  *education*: variabile categorica indicante il titolo di studio più alto ottenuto dall'individuo
+
+5. *educational-num*: variabile numerica indicante il grado di istruzione
+
+6. *marital-status*: variabile categorica indicante lo stato civile (celibe, divorziato, ecc...)
+
+7. *occupation*: variabile categorica indicante la posizione attuale lavorativa dell'individuo 
+
+8. *relationship*: variabile categorica indicante la relazione dell'individuo nel nucleo familiare (moglie, marito, figlio/a, ecc..)
+ 
+9. *race*: variabile categorica indicante l'etnia di ogni individuo
+
+10. *sex*: variabile categorica indicante il sesso 
+
+11. *capital gain*: variabile numerica indicante il capital gain
+
+12. *capital loss*: variabile numerica indicante il capital loss
+
+13. *hours-per-week*: variabile numerica indicante le ore lavorative settimanali di ogni persona
+
+14. *native-country*: variabile categorica indicante la provenienza originaria dell' individuo
+
+15. *income*: variabile categorica indicante l'incasso (se > 50K o se <= 50K) [**v. di output**]
+
+&nbsp;
+
+### 1.1. Analisi preliminare
+
+Procediamo ad analizzare la presenza di valori mancanti ed al loro trattamento. I valori mancanti sono identificati dalla presenza del simbolo $?$ nel dataset.
+```{r missing values}
+
+Modes <- function(x) {
+  ux <- unique(x)
+  tab <- tabulate(match(x, ux))
+  ux[tab == max(tab)]
+}
+
+which(apply(adult, 2, function(x) any(grepl("\\?", x))))
+
+adult <- adult %>% mutate(workclass = ifelse(grepl("\\?", workclass), Modes(workclass), workclass))
+
+adult <- adult %>% mutate(occupation = ifelse(grepl("\\?", occupation), Modes(occupation), occupation))
+
+adult <- adult %>% mutate(native_country = ifelse(grepl("\\?", native_country), Modes(native_country), native_country))
+```
+I dati mancanti si trovano nelle colonne *workclass*, *occupation*, *native_country*.
+Rimpiazziamo tali dati, in quanto si tratta di dati categorici, rispettivamente con la moda.
+
+
+Procediamo con l'effettuare il mapping della variabile di output(*income*) che assumerà valore "No" nel caso in cui $\leq 50K$, "Yes" nel caso in cui $> 50K$:
+
+&nbsp;
+
+
+```{r mapping output, message=FALSE, results = 'asis'}
+adult <- adult %>% mutate(income = ifelse(grepl("<=50K|<=50K.", income), "No", "Yes"))
+adult$income <- as.factor(adult$income)
+latex(describe(adult$income, descript = NULL), file = "", rowlabel.just = "c")
+```
+
+&nbsp;
+
+La proporzione di istanze di classe "Yes" è pari a circa il $24\%$, mentre la proporzione di istanze di classe "No" è pari a circa il $76\%$.
+
+
+A causa della complessità computazionale molto alta nel caso delle *support vector machines*, abbiamo pensato di fare un *subsampling* del dataset, utilizzando una percentuale del $10\%$ del dataset originale, mantenendo la stessa proporzione delle istanze appartenenti alle *labels*. Il subsampling è effettuato senza rimpiazzamento.
+```{r subsampling, message=FALSE, results='asis'}
+set.seed(999)
+
+adult <- sample_frac(tbl = adult, size = 0.1, replace = FALSE, weight = NULL)
+
+latex(describe(adult$income, descript = NULL), file="")
+```
+
+### 1.2. Analisi esplorativa delle variabili numeriche 
+
+&nbsp;
+
+Visualizziamo, a questo punto, le statistiche di base delle variabili numeriche:
+
+
+**Nota**:
+La variabile **education_num** indica il grado di istruzione di ogni singolo individuo. Poichè questo aspetto lo ritroviamo già all'interno della variabile *education*, decidiamo di eliminare tale variabile dalla nostra analisi. Inoltre, la variabile **Final weight(fnlwgt)** è poco esplicativa per la nostra analisi, in quanto ci stima il peso finale di quanta parte della popolazione rappresenta. Procediamo quindi a rimuoverla.
+&nbsp;
+
+```{r remove education num and fnlwgt}
+adult$fnlwgt <- NULL
+adult$education_num <- NULL
+```
+
+```{r numeric features, message=FALSE, results='asis'}
+adult.numeric <- data.frame(adult$age, adult$capital_gain, adult$capital_loss, adult$hours_per_week)
+latex(describe(adult.numeric, descript = NULL), file="")
+```
+
+&nbsp;
+
+#### **Osservazioni sulle variabili numeriche**:
+
+1. **Età**: Possiamo notare di come l'età media sia di *38* anni e la deviazione standard pari a *15.48* indica di quanto il valore si discosta da quello medio. L'età più piccola è 17, mentre quella più grande è 90. Dall'analisi dei quartili possiamo evincere che il 25% (primo quartile) delle osservazioni è un' età al di sotto di 28, mentre il 75% (terzo quartile) è un'età al di sotto di 48. Visualizziamo l'istogramma nella figura seguente:
+
+```{r hist age}
+library(ggplot2)
+ggplot(data = adult, aes(x=age)) + 
+  geom_histogram(binwidth = 1, colour = "black", fill="red") 
+```
+
+Quello che possiamo notare dalla distribuzione è sicuramente la presenza di asimmetria, con la conseguente presenza di coda a destra della distribuzione(*skewness*)
+
+
+2. **capital-gain**: in questo caso la variabile assume valore medio di circa *1079*. Il secondo quartile (la mediana) è nullo, il che indica che la distribuzione è fortemente asimmetrica a destra. Sempre dai quartili possiamo desumere di come il *capital gain* si concentri attorno al valore $0$ oppure attorno ad un valore molto alto: quindi un individuo può o non avere alcun guadagno oppure averne uno molto alto.
+Visualizziamo l'istogramma della distribuzione:
+```{r hist capital gain, warning=FALSE}
+ggplot(data = adult, aes(x=capital_gain)) + 
+  geom_histogram(colour = "black", fill="yellow")
+```
+Possiamo notare di come l'istogramma mostri quanto affermato poc'anzi. Molti valori sono $0$, mentre solo alcuni assumono valori di *capital-gain* alto
+
+3. **capital-loss**: questo attributo è simile al precedente analizzato. La mediana è zero e sicuramente avremo la presenza di *skewness* nell'istogramma della distribuzione. Visualizziamo l'istogramma:
+```{r hist capital-loss}
+ggplot(data = adult, aes(x=capital_loss)) + 
+  geom_histogram(colour = "black", fill="blue")
+
+```
+Possiamo quindi notare quanto affermato in precedenza: la presenza di valori che sono spesso nulli e l'asimmetria.
+
+4. **hours-per-week**: il significato di questo attributo è quello di indicare le ore lavorative settimanali di ogni persona. Il  valor medio si aggira attorno alle $40$ ore di lavoro settimanali. Il minimo corrisponde a 
+$1$, il massimo a $99$. Circa il $75\%$ delle persone lavora all'incirca 45(o meno) ore alla settimana. 
+```{r hist hours-per-week, warning=FALSE}
+ggplot(data = adult, aes(x=hours_per_week)) + 
+  geom_histogram( colour = "white", fill="red") 
+```
+L'istogramma mostra la presenza di una concentrazione molto vasta di valori fra $30-40$ ore. La maggior parte delle persone lavora all'incirca 30/40 ore settimanali.
+ 
+
+
+
+### 1.3. Analisi esplorativa delle variabili categoriche
+
+
+Passiamo adesso all'analisi delle variabili categoriche:
+
+&nbsp;
+
+```{r describe cat values,message=FALSE, warning=FALSE, results='asis', echo=FALSE}
+adult.categ <- data.frame(adult$workclass, adult$education, adult$marital_status, adult$occupation, adult$relationship, adult$race, adult$sex, adult$native_country)
+
+latex(describe(adult.categ, descript = NULL), file="")
+```
+#### **Considerazioni sulle variabili categoriche**:
+
+
+1. **workclass**: questa variabile indica la categoria di lavoro di ogni persona. Possiamo notare da una prima lettura della tabella sovrastante, di come il valore modale più alto sia *Private*. Visualizziamo nel *barplot* seguente le frequenze di ogni categoria lavorativa:
+
+
+```{r bar workclass}
+ggplot(data = adult, aes(x=workclass)) + 
+  geom_bar(mapping = aes(x = workclass, fill = workclass)) + 
+  scale_x_discrete(guide = guide_axis(n.dodge = 2))
+```
+
+Ci sono 8 categorie di lavoro, la cui categoria predominante è *"private"*. Poichè le persone che non hanno mai lavorato sono davvero poche(ca. $10$) e poichè alcuni valori sono molto simili fra loro(es. "Federal-gov" e "Local-gov"), possiamo riassumere tutte queste variabili in 4 differenti livelli: *lavoro "statale"*, *lavoro "autonomo"*, *lavoro "privato"* e *"altro"*.
+```{r workclass reduced}
+adult <- adult %>% mutate(workclass = ifelse(grepl(".gov$", str_trim(workclass)), "Gov", 
+                                                 ifelse(grepl("Self.",str_trim(workclass)),"Self-emp",
+                                                        ifelse(grepl("^Private$", str_trim(workclass)),"Private", "Other"))))
+adult$workclass <- as.factor(adult$workclass)
+
+ggplot(data = adult, aes(x=workclass)) + 
+  geom_bar(mapping = aes(x = workclass, fill = workclass)) 
+```
+
+
+2. **education**: questa variabile può assumere 16 differenti valori. Visualizziamo nel diagramma a barre seguente le frequenze
+```{r bar education}
+ggplot(data = adult.categ, aes(x=adult.education)) + 
+  geom_bar(mapping = aes(x = adult.education, fill = adult.education)) + 
+  scale_x_discrete(guide = guide_axis(n.dodge = 3))
+```
+
+La frequenza più alta è relativa ad *HS-grad*. Anche in questo caso possiamo sintetizzare alcuni valori della variabile: 
+
+- Dal primo al dodicesimo grado riassumiamo ad etichettiamo con "Before-Highschool"
+- I college biennali sono riassunti con *Associate*(titolo di studio che richiede due anni dopo la high-school)
+- I *master*, *dottorati* e le *Prof-school* sono riassunti nell'attributo *Post-Graduate*
+```{r sintetize education}
+adult <- adult %>% mutate(education = ifelse(grepl(".th$|^Preschool$", (education)), "Before-Highschool",
+                                                     ifelse(grepl("Assoc.", (education)),"Associate",
+                                                            ifelse(grepl("Masters$|Doctorate$|Prof.",(education)), "Post-Graduate", 
+                                                                   as.character((education))))))
+adult$education <- as.factor(adult$education)
+```
+```{r freq education}
+ggplot(data = adult, aes(x=education)) + 
+  geom_bar(mapping = aes(x = education, fill = education)) + 
+  scale_x_discrete(guide = guide_axis(n.dodge = 2))
+```
+
+3. **marital-status**: possiamo notare di come abbiamo 7 diversi tipi di stato civile. Visualizziamo il diagramma a barre
+```{r bar marital status}
+ggplot(data = adult.categ, aes(x=adult.marital_status)) + 
+  geom_bar(mapping = aes(x = adult.marital_status, fill = adult.marital_status)) + 
+  scale_x_discrete(guide = guide_axis(n.dodge = 2))
+```
+Possiamo pensare di riassumere:
+
+
+- *Divorced* e *Separated* con un unico valore *Separated*
+- Tutte le variabili che hanno come prefisso "*Married*" con *Married*
+
+```{r status marital}
+adult <- adult %>% mutate(marital_status = ifelse(grepl("Married.", marital_status), "Married",
+                                                     ifelse(grepl("Separated$|Divorced$", 
+                                                                  marital_status),"Separated",
+                                                                  as.character(marital_status))))
+
+adult$marital_status <- as.factor(adult$marital_status)
+```
+
+```{r plot reduced marital}
+ggplot(data = adult, aes(x=marital_status)) + 
+  geom_bar(mapping = aes(x = marital_status, fill = marital_status))
+```
+La maggior parte delle persone è sposata.
+
+4. **occupation**: questa variabile indica l'occupazione lavorativa di ogni singolo individuo. Il valore modale più alto è denotato dal valore *Prof-specialty*. Visualizziamo il diagramma a barre:
+```{r}
+ggplot(data = adult.categ, aes(x=adult.occupation)) + 
+  geom_bar(mapping = aes(x = adult.occupation, fill = adult.occupation)) + 
+  scale_x_discrete(guide = guide_axis(n.dodge = 3))
+
+adult$occupation <- as.factor(adult$occupation)
+```
+
+5. **relationship**: l'attributo indica la relazione dell'individuo nel nucleo familiare. Ci sono 6 valori unici nel dataset. Visualizziamo il diagramma a barre
+```{r bar relationship}
+ggplot(data = adult.categ, aes(x=adult.relationship)) + 
+  geom_bar(mapping = aes(x = adult.relationship, fill = adult.relationship)) + 
+  scale_x_discrete(guide = guide_axis(n.dodge = 1))
+adult$relationship <- as.factor(adult$relationship)
+```
+
+6. **race**: attributo che indica la razza dell'individuo. Possiamo notare la presenza di 5 valori unici, la cui maggior parte è *white*, a cui segue *black*. Di seguito il diagramma a barre:
+```{r race}
+ggplot(data = adult.categ, aes(x=adult.race)) + 
+  geom_bar(mapping = aes(x = adult.race, fill = adult.race)) + 
+  scale_x_discrete(guide = guide_axis(n.dodge = 2))
+adult$race <- as.factor(adult$race)
+```
+
+7. **sex**: attributo indicante il sesso di un singolo individuo. Il diagramma a barre è il seguente:
+
+```{r sex}
+ggplot(data = adult.categ, aes(x=adult.sex)) + 
+  geom_bar(mapping = aes(x = adult.sex, fill = adult.sex)) + 
+  scale_x_discrete(guide = guide_axis(n.dodge = 2))
+adult$sex <- as.factor(adult$sex)
+```
+Possiamo notare di come il sesso maschile prevalga.
+
+
+8. **native_country**: attributo indicante la provenienza di origine del singolo individuo. Poichè abbiamo differenti valori, procediamo prima nel sintetizzare con "cittadino di provenienza statunitense e non". Visualizziamo il diagramma a barre con i dati "trasformati":
+```{r country}
+adult<- adult %>% mutate(native_country = ifelse(grepl("United.",native_country), "USA", "Non-USA"))
+adult$native_country<- as.factor(adult$native_country)
+
+ggplot(data = adult, aes(x=native_country)) + 
+  geom_bar(mapping = aes(x = native_country, fill = native_country)) + 
+  scale_x_discrete(guide = guide_axis(n.dodge = 2))
+adult$native_country <- as.factor(adult$native_country)
+```
+Come si può evincere dal diagramma a barre, la maggior parte delle persone ha origini statunitensi.
+
+
+
+### 1.4. Outlier detection
+
+Procediamo a verificare la presenza di valori *outlier*(anomali) tra le variabili numeriche. Visualizziamo la distribuzione della variabile **hours per week** rispetto alle classi:
+
+```{r distrib}
+adult %>%
+  ggplot(data = adult, mapping = aes(x = c(1:length(hours_per_week)), y = hours_per_week, ))  + geom_point(mapping = aes(color = income))
+```
+Possiamo notare con evidenza la presenza di outlier: l' anomalia principale risiede nel fatto che è praticamente impossibile che un individuo lavori così tante ore a settimana.
+
+
+Effettuando un test $\chi^2$ possiamo notare di come il valore $99$ sia un *outlier*.
+
+```{r check_outliers}
+outliers::chisq.out.test(adult$hours_per_week)
+
+```
+Inoltre, supponendo che una persona lavori 12 ore al giorno **tutti** i giorni(aspetto praticamente improbabile), avremmo un monte ore pari ad 84($12 \times 7$) ore settimanali. Tuttavia, nel dataset sono presenti valori maggiori di 84, pertanto, tollerando ad esempio qualche caso in cui si lavori effettivamente più di 84 ore, considereremo *outliers* i valori che si trovano nel range $[90-99]$. Procediamo a sostituirli rispettivamente con la media. Visualizziamo, dunque, il diagramma a barre.
+
+```{r, message = F, warning=F}
+media_ore <- round(mean(adult$hours_per_week))
+
+adult <- adult %>% 
+  mutate(hours_per_week = ifelse(hours_per_week >= 90, media_ore, hours_per_week))
+index <- c(1:length(adult$hours_per_week))
+
+require(gridExtra)
+
+
+plot1<- adult %>% 
+  ggplot() +
+  aes(x = hours_per_week) +
+  geom_histogram(binwidth = 3, colour = "white", fill="red")
+
+plot2 <- ggplot(data = adult, mapping = aes(x = index, y = hours_per_week, ))  + geom_point(mapping = aes(color = income))
+grid.arrange(plot1, plot2, ncol=2)
+```
+Notiamo di come i valori anomali sono stati rimossi.
+
+## 2. Applicazione dell'algoritmo SVM sul dataset
+
+
+Iniziamo con il standardizzare le variabili numeriche all'interno del dataset, affinchè abbiano media nulla e varianza unitaria.
+```{r standardization}
+adult$age <- scale(adult$age, center = TRUE, scale = TRUE)
+adult$capital_gain <- scale(adult$capital_gain, center = TRUE, scale = TRUE)
+adult$capital_loss <- scale(adult$capital_loss, center = TRUE, scale = TRUE)
+adult$hours_per_week <- scale(adult$hours_per_week, center = TRUE, scale = TRUE)
+```
+
+
+Procediamo con il partizionare il dataset in training e test set: la percentuale scelta è $80\%$ per il dataset di training e $20\%$ per quello di test. 
+
+```{r partitioning train/test}
+set.seed(999)
+train.index = createDataPartition(adult$income,
+                         p = .8,
+                         list = F)
+
+adult.train = adult[train.index, ]
+adult.test = adult[-train.index, ]
+```
+
+Avendo a che fare con variabili categoriche all'interno del dataset, possiamo convertire tali variabili in variabili "dummy", che assumeranno il valore $1$ se una particolare caratteristica è vera, e $0$ altrimenti.
+
+```{r dummies for training}
+which.class <- grep("income", colnames(adult.train)) # indica l'indice della colonna della variabile di output
+
+dummies.train <- dummyVars(~ .,
+                data = adult.train[,-which.class], 
+                fullRank = FALSE,
+                levelsOnly = FALSE, 
+                sep = "_")
+
+oneHot.training <- data.frame(predict(dummies.train, newdata = adult.train))
+
+# Attacco la variabile di output
+oneHot.training$income <- as.factor(adult.train$income)
+```
+
+```{r dummies for test set}
+dummies.test <- dummyVars(~ .,
+                data = adult.test[,-which.class], 
+                fullRank = FALSE, 
+                levelsOnly = FALSE, 
+                sep = "_")
+
+oneHot.testing <- data.frame(predict(dummies.test, newdata = adult.test))
+oneHot.testing$income <- as.factor(adult.test$income)
+```
+
+Procediamo con l'utilizzo di $caret$, utilizzando kernel differenti.
+
+### 2.1 kernlab e kernel lineare
+
+Procediamo ad utilizzare un kernel lineare e il calcolo in parallelo con 3 *cores*. Utilizziamo inoltre una $5-fold$ cross-validation e, attraverso il parametro *tuneGrid*, otteniamo il valore del parametro $C$ ottimale.
+```{r train with ksvm_linear}
+
+
+cluster <- makeCluster(detectCores()-1) 
+registerDoParallel(cluster)
+
+set.seed(999)
+fit_linear_ksvm <- train(
+                     income~., 
+                     data = oneHot.training,
+                     method = "svmLinear",
+                     allowParallel = TRUE,
+                     preProcess = NULL,
+                     metric = "Sens",
+                     trControl = trainControl(
+                       "cv", 
+                       number = 5, 
+                       allowParallel = TRUE,
+                       classProbs = TRUE,
+                       summaryFunction = twoClassSummary),
+                     tuneGrid = 
+                       expand.grid(C =c(2^(-2:8))))
+stopCluster(cluster)
+
+fit_linear_ksvm$bestTune
+
+fit_linear_ksvm$times$everything
+```
+Il valore migliore di $C$ ottenuto è pari ad $2$. Possiamo visualizzare anche tempo di calcolo.
+
+```{r prediction with ksvm_linear}
+pred = predict(fit_linear_ksvm, newdata=oneHot.testing)
+confusionMatrix(data=pred, oneHot.testing$income)
+```
+Otteniamo, con un kernel lineare, una accuratezza di circa l' $86\%$.
+
+### 2.2 e1071 e kernel lineare
+Procediamo ad utilizzare un kernel lineare utilizzando la libreria *e1071* e il calcolo in parallelo con 3 *cores*. Utilizziamo inoltre una $5-fold$ cross-validation, standardizziamo i dati numerici, e attraverso il parametro *tuneGrid* otteniamo il valore del parametro $C$ ottimale.
+
+```{r train with e1071_linear}
+cluster <- makeCluster(detectCores()-1) 
+registerDoParallel(cluster)
+
+set.seed(999)
+fit_linear_e1071 <- train(
+                     income~., 
+                     data = oneHot.training,
+                     method = "svmLinear2",
+                     allowParallel = TRUE,
+                     preProcess =NULL,
+                     metric = "Sens",
+                     trControl = trainControl(
+                       "cv", 
+                       number = 5, 
+                       allowParallel = TRUE,
+                       classProbs = TRUE,
+                       summaryFunction = twoClassSummary),
+                     tuneGrid = 
+                       expand.grid(cost =c(2^(-2:8))))
+stopCluster(cluster)
+fit_linear_e1071$bestTune
+
+fit_linear_e1071$times$everything
+```
+Notiamo di come i tempi di calcolo risultino essere maggiori con l'utilizzo di *e1071*.
+
+
+Passiamo alla fase predittiva:
+```{r predict with e1071_linear}
+pred_e1071 = predict(fit_linear_e1071, newdata=oneHot.testing)
+confusionMatrix(data=pred_e1071, oneHot.testing$income)
+```
+L'accuratezza predittiva risulta pari all' $86\%$, consistentemente con i risultati ottenuti rispetto alla libreria precedente. 
+
+
+
+
+
+### 2.3 kernlab e kernel gaussiano
+
+In questa sezione procediamo ad addestrare il modello attraverso una *support vector machine* basata su kernel gaussiano.
+Innanzitutto, poichè la complessità nel calcolo attraverso il metodo *train()* è molto alta, calcoliamo una stima dell'iperparametro attraverso il metodo **sigest()** di *kernlab*.
+```{r ksvm_gaussian}
+sigma <- sigest(income~., data = oneHot.training)
+
+cluster <- makeCluster(detectCores()-1) # convention to leave 1 core for OS
+registerDoParallel(cluster)
+
+grid_gaussian <- expand.grid(C=c(2^(-2:8)), sigma = sigma[2])
+
+set.seed(999)
+fit_gaussian <- train(income~., 
+                     data = oneHot.training,
+                     method = "svmRadial",
+                     allowParallel = TRUE,
+                     scale = F,
+                     preProcess = NULL,
+                     metric = "Sens",
+                     trControl = trainControl(
+                       "cv", 
+                       number = 5, 
+                       allowParallel = TRUE,
+                       classProbs = TRUE,
+                       summaryFunction = twoClassSummary),
+                     tuneGrid = grid_gaussian 
+                       )
+stopCluster(cluster)
+
+fit_gaussian$bestTune
+
+fit_gaussian$times$everything
+```
+Con un kernel gaussiano otteniamo che il parametro $C$ migliore ottenuto è $128$ ed i tempi sono ridotti poichè abbiamo impostato il valore di *sigma* in partenza, senza far lavorare il *train()* alla ricerca dell'iperparametro ottimale, in quanto una sua stima l'abbiamo ottenuta dalla funzione *sigest()*, fornita all'interno della libreria *kernlab*.
+
+```{r pred_gaussian}
+pred_gauss = predict(fit_gaussian, newdata=oneHot.testing)
+confusionMatrix(data=pred_gauss, oneHot.testing$income)
+```
+Con un kernel gaussiano otteniamo una accuratezza di circa $87\%$. 
+
+### 2.4 kernlab e kernel polinomiale
+
+
+Procediamo a questo punto ad utilizzare un kernel polinomiale, utilizzando *kernlab*. 
+
+```{r polynomial, warning=FALSE, message=FALSE}
+cluster <- makeCluster(detectCores()-1) # convention to leave 1 core for OS
+registerDoParallel(cluster)
+
+grid_poly <- expand.grid(C=c(2^(-2:8)), degree = c(2,3), scale = sigma[2])
+
+set.seed(999)
+fit_poly <- train(income~., 
+                     data = oneHot.training,
+                     method = "svmPoly",
+                     allowParallel = TRUE,
+                     scale = F,
+                     preProcess = NULL,
+                     metric = "Sens",
+                     trControl = trainControl(
+                       "cv", 
+                       number = 5, 
+                       allowParallel = TRUE,
+                       classProbs = TRUE,
+                       summaryFunction = twoClassSummary),
+                     tuneGrid = grid_poly 
+                       )
+stopCluster(cluster)
+
+fit_poly$bestTune
+
+fit_poly$times$everything
+```
+Possiamo notare di come i tempi di calcolo non siano stati molto alti e soprattutto il considerare come grado ottimale del polinomio separatore, il grado 3. Il costo migliore ottenuto è $2^8=256$ per quanto riguarda il parametro C. Procediamo con la predizione.
+```{r predict poly}
+pred_poly = predict(fit_poly, newdata=oneHot.testing)
+confusionMatrix(data=pred_poly, oneHot.testing$income)
+```
+Anche in questo caso, l'accuratezza predittiva è di circa l'$86\%$, in generale potremo dire una buona accuratezza.
+
